@@ -4,5 +4,6 @@ CREATE TABLE IF NOT EXISTS books (
   title text NOT NULL,
   short_title text NOT NULL,
   year integer NOT NUll,
-  tags text[] NOT NULL
+  tags text[] NOT NULL,
+  version integer NOT NULL DEFAULT 1
 );

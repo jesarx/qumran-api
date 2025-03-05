@@ -1,0 +1,8 @@
+ALTER TABLE books
+DROP CONSTRAINT IF EXISTS fk_books_publishers;
+
+ALTER TABLE books
+DROP COLUMN IF EXISTS pub_id;
+
+DROP TABLE IF EXISTS publishers;
+

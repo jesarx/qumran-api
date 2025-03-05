@@ -12,22 +12,47 @@ import (
 // CREATE BOOK
 func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Title      string   `json:"title"`
-		ShortTitle string   `json:"short_title"`
-		Tags       []string `json:"tags"`
-		Year       int32    `json:"year"`
+		Title        string   `json:"title"`
+		ShortTitle   string   `json:"short_title"`
+		Tags         []string `json:"tags"`
+		Year         int32    `json:"year"`
+		AuthorID     int64    `json:"author_id"`
+		PublisherID  int64    `json:"publisher_id"`
+		ISBN         string   `json:"isbn"`
+		Description  string   `json:"description"`
+		Pages        int32    `json:"pages"`
+		ExternalLink string   `json:"external_link"`
 	}
-	err := app.readJSON(w, r, &input)
+
+	// FILE UPLOAD
+
+	err := app.readJSONFromForm(w, r, "data", &input)
 	if err != nil {
 		app.badRequestResponse(w, r, err)
 		return
 	}
 
+	result, err := app.processFiles(w, r, "pdf", "image", input.ShortTitle, input.AuthorID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	baseFilename := result["filename"]
+
 	book := &data.Book{
-		Title:      input.Title,
-		ShortTitle: input.ShortTitle,
-		Year:       input.Year,
-		Tags:       input.Tags,
+		Title:        input.Title,
+		ShortTitle:   input.ShortTitle,
+		Slug:         baseFilename,
+		Year:         input.Year,
+		Tags:         input.Tags,
+		AuthorID:     input.AuthorID,
+		PublisherID:  input.PublisherID,
+		Filename:     baseFilename,
+		ISBN:         input.ISBN,
+		Description:  input.Description,
+		Pages:        input.Pages,
+		ExternalLink: input.ExternalLink,
 	}
 
 	v := validator.New()
@@ -78,7 +103,7 @@ func (app *application) showBookHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // UPDATE BOOK
-func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readIDParam(r)
 	if err != nil {
 		app.notFoundResponse(w, r)
@@ -97,9 +122,9 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	var input struct {
-		Title      string   `json:"title"`
-		ShortTitle string   `json:"short_title"`
-		Year       int32    `json:"year"`
+		Title      *string  `json:"title"`
+		ShortTitle *string  `json:"short_title"`
+		Year       *int32   `json:"year"`
 		Tags       []string `json:"tags"`
 	}
 
@@ -109,10 +134,18 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	book.Title = input.Title
-	book.ShortTitle = input.ShortTitle
-	book.Year = input.Year
-	book.Tags = input.Tags
+	if input.Title != nil {
+		book.Title = *input.Title
+	}
+	if input.Year != nil {
+		book.Year = *input.Year
+	}
+	if input.ShortTitle != nil {
+		book.ShortTitle = *input.ShortTitle
+	}
+	if input.Tags != nil {
+		book.Tags = input.Tags
+	}
 
 	v := validator.New()
 
@@ -123,7 +156,13 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 
 	err = app.models.Books.Update(book)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		switch {
+		case errors.Is(err, data.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
 		return
 	}
 
@@ -153,6 +192,43 @@ func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	err = app.writeJSON(w, http.StatusOK, envelope{"message": "movie successfully deleted"}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) listBookHandler(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Title string
+		Tags  []string
+		data.Filters
+	}
+
+	v := validator.New()
+
+	qs := r.URL.Query()
+
+	input.Title = app.readString(qs, "title", "")
+	input.Tags = app.readCSV(qs, "tags", []string{})
+
+	input.Filters.Page = app.readInt(qs, "page", 1, v)
+	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
+
+	input.Filters.Sort = app.readString(qs, "sort", "id")
+	input.Filters.SortSafelist = []string{"id", "title", "year", "tags", "-id", "-title", "-year", "-tags"}
+
+	if data.ValidateFilters(v, input.Filters); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	books, metadata, err := app.models.Books.GetAll(input.Title, input.Tags, input.Filters)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, envelope{"books": books, "metadata": metadata}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
