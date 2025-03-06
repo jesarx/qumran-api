@@ -43,7 +43,6 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	book := &data.Book{
 		Title:        input.Title,
 		ShortTitle:   input.ShortTitle,
-		Slug:         baseFilename,
 		Year:         input.Year,
 		Tags:         input.Tags,
 		AuthorID:     input.AuthorID,

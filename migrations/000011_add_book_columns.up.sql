@@ -1,6 +1,7 @@
 ALTER TABLE books
-ADD COLUMN filename TEXT,
+ADD COLUMN filename TEXT UNIQUE,
 ADD COLUMN isbn TEXT,
 ADD COLUMN description TEXT,
 ADD COLUMN pages INT,
-ADD COLUMN external_link TEXT;
+ADD COLUMN external_link TEXT,
+ADD COLUMN auth2_id BIGINT REFERENCES authors (id);

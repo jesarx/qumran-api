@@ -12,24 +12,27 @@ import (
 )
 
 type Book struct {
-	ID             int64     `json:"id"`
-	CreatedAt      time.Time `json:"-"`
-	Year           int32     `json:"year,omitempty"`
-	Title          string    `json:"title,omitempty"`
-	ShortTitle     string    `json:"short_title,omitempty"`
-	Tags           []string  `json:"tags,omitempty"`
-	AuthorID       int64     `json:"author_id,omitempty"`
-	AuthorName     string    `json:"author_name,omitempty"`
-	AuthorLastName string    `json:"author_last_name,omitempty"`
-	PublisherID    int64     `json:"publisher_id,omitempty"`
-	PublisherName  string    `json:"publisher_name,omitempty"`
-	Slug           string    `json:"slug,omitempty"`
-	Version        int32     `json:"version"`
-	Filename       string    `json:"filename,omitempty"`
-	ISBN           string    `json:"isbn,omitempty"`
-	Description    string    `json:"description,omitempty"`
-	Pages          int32     `json:"pages,omitempty"`
-	ExternalLink   string    `json:"external_link,omitempty"`
+	ID              int64     `json:"id"`
+	CreatedAt       time.Time `json:"-"`
+	Year            int32     `json:"year,omitempty"`
+	Title           string    `json:"title,omitempty"`
+	ShortTitle      string    `json:"short_title,omitempty"`
+	Tags            []string  `json:"tags,omitempty"`
+	AuthorID        int64     `json:"author_id,omitempty"`
+	AuthorName      string    `json:"author_name,omitempty"`
+	AuthorLastName  string    `json:"author_last_name,omitempty"`
+	Author2ID       *int64    `json:"author2_id,omitempty"`
+	Author2Name     *string   `json:"author2_name,omitempty"`
+	Author2LastName *string   `json:"author2_last_name,omitempty"`
+	PublisherID     int64     `json:"publisher_id,omitempty"`
+	PublisherName   string    `json:"publisher_name,omitempty"`
+	Slug            string    `json:"slug,omitempty"`
+	Version         int32     `json:"version"`
+	Filename        string    `json:"filename,omitempty"`
+	ISBN            string    `json:"isbn,omitempty"`
+	Description     string    `json:"description,omitempty"`
+	Pages           int32     `json:"pages,omitempty"`
+	ExternalLink    string    `json:"external_link,omitempty"`
 }
 
 func ValidateBook(v *validator.Validator, book *Book) {
@@ -170,13 +173,40 @@ func (b BookModel) Delete(id int64) error {
 
 func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book, Metadata, error) {
 	query := fmt.Sprintf(`
-    SELECT count(*) OVER(), id, created_at, title, short_title, year, tags, slug, version
-    FROM books
-    WHERE (to_tsvector('spanish', title) @@ plainto_tsquery('spanish', $1) OR $1 = '') 
-    AND (tags @> $2 OR $2 = '{}')
-    ORDER by %s %s, title ASC
+    SELECT 
+        count(*) OVER(),
+        b.id, 
+        b.created_at, 
+        b.title, 
+        b.short_title, 
+        b.auth_id, 
+        b.auth2_id,
+        b.pub_id, 
+        b.year, 
+        b.tags, 
+        b.slug, 
+        b.filename,
+        b.version,
+        a.name AS author_name,
+        a.last_name AS author_last_name,
+        a2.name AS author_name_2,
+        a2.last_name AS author_last_name_2,
+        p.name AS publisher_name
+    FROM 
+        books b
+    JOIN 
+        authors a ON b.auth_id = a.id
+    LEFT JOIN
+        authors a2 ON b.auth2_id = a2.id
+    JOIN 
+        publishers p ON b.pub_id = p.id
+    WHERE 
+        (to_tsvector('spanish', b.title) @@ plainto_tsquery('spanish', $1) OR $1 = '') 
+        AND (b.tags @> $2 OR $2 = '{}')
+    ORDER BY 
+        %s %s, b.title ASC
     LIMIT $3 OFFSET $4
-    `, filters.sortColumn(), filters.sortDirection())
+`, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -196,7 +226,25 @@ func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book
 	for rows.Next() {
 		var book Book
 
-		err := rows.Scan(&totalRecords, &book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags), &book.Slug, &book.Version)
+		err := rows.Scan(
+			&totalRecords,
+			&book.ID,
+			&book.CreatedAt,
+			&book.Title,
+			&book.ShortTitle,
+			&book.AuthorID,
+			&book.Author2ID,
+			&book.PublisherID,
+			&book.Year,
+			pq.Array(&book.Tags),
+			&book.Slug,
+			&book.Filename,
+			&book.Version,
+			&book.AuthorName,
+			&book.AuthorLastName,
+			&book.Author2Name,
+			&book.Author2LastName,
+			&book.PublisherName)
 		if err != nil {
 			return nil, Metadata{}, err
 		}

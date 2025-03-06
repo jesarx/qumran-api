@@ -179,12 +179,30 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	// Define PDF file details
 	pdfExtension := filepath.Ext(pdfHeader.Filename)
 	fileData.FileName = baseFileName + pdfExtension
-	fileData.PDFPath = fmt.Sprintf("../../uploads/pdfs/%s", fileData.FileName)
+
+	// Define the target directory
+	pdfTargetDir := "../../uploads/covers"
+
+	// Create the directory (and any necessary parent directories) if it doesn't exist
+	if err := os.MkdirAll(pdfTargetDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	fileData.PDFPath = fmt.Sprintf(pdfTargetDir, fileData.FileName)
 
 	// Define image file details
-	imageExtension := filepath.Ext(imageHeader.Filename)
+	imageExtension := ".jpg"
 	imageFileName := baseFileName + imageExtension
-	fileData.ImagePath = fmt.Sprintf("../../uploads/covers/%s", imageFileName)
+
+	// Define the target directory
+	imageTargetDir := "../../uploads/covers"
+
+	// Create the directory (and any necessary parent directories) if it doesn't exist
+	if err := os.MkdirAll(imageTargetDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	fileData.ImagePath = fmt.Sprintf(imageTargetDir, imageFileName)
 
 	// Save the PDF file
 	pdfDst, err := os.Create(fileData.PDFPath)

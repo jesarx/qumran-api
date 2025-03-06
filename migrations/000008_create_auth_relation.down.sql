@@ -1,5 +1,5 @@
 ALTER TABLE books
-DROP CONSTRAINT fk_books_authors;
+DROP CONSTRAINT IF EXISTS fk_books_authors;
 
 ALTER TABLE books
-DROP COLUMN auth_id;
+DROP COLUMN IF EXISTS auth_id;

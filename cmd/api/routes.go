@@ -15,6 +15,9 @@ func (app *application) routes() http.Handler {
 
 	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
 
+	router.HandlerFunc(http.MethodGet, "/v1/images", app.serveImages)
+	router.HandlerFunc(http.MethodGet, "/v1/pdfs", app.servePdfs)
+
 	router.HandlerFunc(http.MethodGet, "/v1/books", app.listBookHandler)
 	router.HandlerFunc(http.MethodPost, "/v1/books", app.requirePermission("books:write", app.createBookHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/books/:id", app.showBookHandler)
