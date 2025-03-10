@@ -69,7 +69,7 @@ func (b BookModel) Insert(book *Book) error {
 	return b.DB.QueryRow(query, args...).Scan(&book.ID, &book.CreatedAt)
 }
 
-func (b BookModel) Get(id int64) (*Book, error) {
+func (b BookModel) GetByID(id int64) (*Book, error) {
 	if id < 1 {
 		return nil, ErrRecordNotFound
 	}
@@ -103,6 +103,64 @@ func (b BookModel) Get(id int64) (*Book, error) {
 
 	err := b.DB.QueryRow(query, id).Scan(
 		&book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags), &book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.PublisherID, &book.PublisherName, &book.Version, &book.Slug,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+
+	return &book, nil
+}
+
+func (b BookModel) GetBySlug(slug string) (*Book, error) {
+	if slug == "" {
+		return nil, ErrRecordNotFound
+	}
+
+	query := `
+    SELECT 
+  b.id, 
+  b.created_at, 
+  b.title, 
+  b.short_title, 
+  b.year, 
+  b.tags, 
+  b.auth_id, 
+  a1.name AS author_name, 
+  a1.last_name AS author_last_name,
+  b.auth2_id,
+  a2.name AS author_name_2,
+  a2.last_name AS author_last_name_2,
+  b.pub_id, 
+  p.name AS publisher_name,
+  b.version,
+  b.slug,
+  b.filename,
+  b.description,
+  b.pages,
+  b.isbn,
+  b.external_link
+FROM 
+  books b
+JOIN 
+  authors a1 ON b.auth_id = a1.id
+LEFT JOIN 
+  authors a2 ON b.auth2_id = a2.id
+JOIN 
+  publishers p ON b.pub_id = p.id
+WHERE 
+  b.slug = $1;
+  `
+
+	var book Book
+	err := b.DB.QueryRow(query, slug).Scan(
+		&book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags),
+		&book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.Author2ID, &book.Author2Name, &book.Author2LastName, &book.PublisherID,
+		&book.PublisherName, &book.Version, &book.Slug, &book.Filename, &book.Description, &book.Pages, &book.ISBN, &book.ExternalLink,
 	)
 	if err != nil {
 		switch {

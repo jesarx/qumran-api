@@ -20,7 +20,7 @@ func (app *application) routes() http.Handler {
 
 	router.HandlerFunc(http.MethodGet, "/v1/books", app.listBookHandler)
 	router.HandlerFunc(http.MethodPost, "/v1/books", app.requirePermission("books:write", app.createBookHandler))
-	router.HandlerFunc(http.MethodGet, "/v1/books/:id", app.showBookHandler)
+	router.HandlerFunc(http.MethodGet, "/v1/books/:slug", app.showBookHandler)
 	router.HandlerFunc(http.MethodPatch, "/v1/books/:id", app.requirePermission("books:write", app.updateBookHandler))
 	router.HandlerFunc(http.MethodDelete, "/v1/books/:id", app.requirePermission("books:write", app.deleteMovieHandler))
 

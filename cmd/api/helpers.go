@@ -32,6 +32,24 @@ func (app *application) readIDParam(r *http.Request) (int64, error) {
 	return id, nil
 }
 
+func (app *application) readSlugParam(r *http.Request) (string, error) {
+	params := httprouter.ParamsFromContext(r.Context())
+	slug := params.ByName("slug")
+
+	// Validate that the slug isn't empty and contains valid characters
+	if slug == "" {
+		return "", errors.New("slug parameter cannot be empty")
+	}
+
+	// This regex allows lowercase letters, numbers, and hyphens
+	validSlug := regexp.MustCompile(`^[a-z0-9-]+$`).MatchString(slug)
+	if !validSlug {
+		return "", errors.New("invalid slug format")
+	}
+
+	return slug, nil
+}
+
 type envelope map[string]any
 
 func (app *application) writeJSON(w http.ResponseWriter, status int, data envelope, headers http.Header) error {
@@ -150,7 +168,7 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	defer pdfFile.Close()
 
 	// Retrieve the image file
-	imageFile, imageHeader, err := r.FormFile(imageField)
+	imageFile, _, err := r.FormFile(imageField)
 	if err != nil {
 		app.failedValidationResponse(w, r, map[string]string{"image": "Image file is required"})
 		return nil, err

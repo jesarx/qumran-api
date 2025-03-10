@@ -78,13 +78,13 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 
 // SHOW BOOK
 func (app *application) showBookHandler(w http.ResponseWriter, r *http.Request) {
-	id, err := app.readIDParam(r)
+	slug, err := app.readSlugParam(r)
 	if err != nil {
 		app.notFoundResponse(w, r)
 		return
 	}
 
-	book, err := app.models.Books.Get(id)
+	book, err := app.models.Books.GetBySlug(slug)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
@@ -109,7 +109,7 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	book, err := app.models.Books.Get(id)
+	book, err := app.models.Books.GetByID(id)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
