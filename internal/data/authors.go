@@ -102,25 +102,27 @@ func (m AuthorModel) Get(id int64, filters Filters) (*Author, []*Book, Metadata,
 	return &author, books, metadata, nil
 }
 
-func (m AuthorModel) GetAll(name string, filters Filters) ([]*Author, Metadata, error) {
+func (m AuthorModel) GetAll(name string, last_name string, filters Filters) ([]*Author, Metadata, error) {
 	query := fmt.Sprintf(`
-    SELECT count(*) OVER(), id, name, last_name
-    FROM authors
-    WHERE (to_tsvector('simple', name) @@ plainto_tsquery('simple', $1) OR $1 = '') 
-    ORDER by %s %s, last_name ASC
-    LIMIT $2 OFFSET $3
+        SELECT count(*) OVER(), id, name, last_name
+        FROM authors
+        WHERE (to_tsvector('simple', name) @@ plainto_tsquery('simple', $1) OR $1 = '')
+        AND (to_tsvector('simple', last_name) @@ plainto_tsquery('simple', $2) OR $2 = '')
+        ORDER by %s %s, last_name ASC
+        LIMIT $3 OFFSET $4
     `, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	args := []any{name, filters.limit(), filters.offset()}
+	args := []any{name, last_name, filters.limit(), filters.offset()}
 
 	rows, err := m.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, Metadata{}, err
 	}
 	defer rows.Close()
+	fmt.Println("Query:", rows)
 
 	totalRecords := 0
 	authors := []*Author{}
