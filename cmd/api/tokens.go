@@ -54,7 +54,7 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 	}
 
 	// Token expiracy time definition
-	token, err := app.models.Tokens.New(user.ID, 24*time.Hour, data.ScopeAuthentication)
+	token, err := app.models.Tokens.New(user.ID, 30*24*time.Hour, data.ScopeAuthentication)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

@@ -11,7 +11,8 @@ import (
 
 func (app *application) listAuthorsHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name string
+		Name     string
+		LastName string
 		data.Filters
 	}
 
@@ -20,19 +21,20 @@ func (app *application) listAuthorsHandler(w http.ResponseWriter, r *http.Reques
 	qs := r.URL.Query()
 
 	input.Name = app.readString(qs, "name", "")
+	input.LastName = app.readString(qs, "last_name", "")
 
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 
 	input.Filters.Sort = app.readString(qs, "sort", "id")
-	input.Filters.SortSafelist = []string{"name", "-name", "last_name", "-last_name"}
+	input.Filters.SortSafelist = []string{"name", "-name", "last_name", "-last_name", "id", "-id"}
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	authors, metadata, err := app.models.Authors.GetAll(input.Name, input.Filters)
+	authors, metadata, err := app.models.Authors.GetAll(input.Name, input.LastName, input.Filters)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
