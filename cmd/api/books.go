@@ -67,10 +67,16 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	headers := make(http.Header)
-	headers.Set("Location", fmt.Sprintf("/v1/books/%d", book.ID))
+	completeBook, err := app.models.Books.GetByID(book.ID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
 
-	err = app.writeJSON(w, http.StatusCreated, envelope{"book": book}, headers)
+	headers := make(http.Header)
+	headers.Set("Location", fmt.Sprintf("/v1/books/%d", completeBook.ID))
+
+	err = app.writeJSON(w, http.StatusCreated, envelope{"book": completeBook}, headers)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
@@ -213,8 +219,8 @@ func (app *application) listBookHandler(w http.ResponseWriter, r *http.Request) 
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 
-	input.Filters.Sort = app.readString(qs, "sort", "id")
-	input.Filters.SortSafelist = []string{"id", "title", "year", "tags", "-id", "-title", "-year", "-tags"}
+	input.Filters.Sort = app.readString(qs, "sort", "-created_at")
+	input.Filters.SortSafelist = []string{"id", "title", "year", "tags", "-id", "-title", "-year", "-tags", "created_at", "-created_at"}
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
