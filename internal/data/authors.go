@@ -122,7 +122,6 @@ func (m AuthorModel) GetAll(name string, last_name string, filters Filters) ([]*
 		return nil, Metadata{}, err
 	}
 	defer rows.Close()
-	fmt.Println("Query:", rows)
 
 	totalRecords := 0
 	authors := []*Author{}
