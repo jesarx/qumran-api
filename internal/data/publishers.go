@@ -14,6 +14,8 @@ import (
 type Publisher struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
+	Slug      string    `json:"slug"`
+	Books     int64     `json:"books"`
 	CreatedAt time.Time `json:"-"`
 }
 
@@ -103,12 +105,14 @@ func (m PublisherModel) Get(id int64, filters Filters) (*Publisher, []*Book, Met
 
 func (m PublisherModel) GetAll(name string, filters Filters) ([]*Publisher, Metadata, error) {
 	query := fmt.Sprintf(`
-    SELECT count(*) OVER(), id, name
-    FROM publishers
-    WHERE (to_tsvector('simple', name) @@ plainto_tsquery('simple', $1) OR $1 = '') 
-    ORDER by %s %s, name ASC
+    SELECT count(*) OVER(), p.id, p.name, p.slug, COUNT(b.id) as book_count
+    FROM publishers p
+    LEFT JOIN books b ON p.id = b.pub_id
+    WHERE (to_tsvector('simple', p.name) @@ plainto_tsquery('simple', $1) OR $1 = '')
+    GROUP BY p.id, p.name
+    ORDER by %s %s, p.name ASC
     LIMIT $2 OFFSET $3
-    `, filters.sortColumn(), filters.sortDirection())
+`, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -127,7 +131,7 @@ func (m PublisherModel) GetAll(name string, filters Filters) ([]*Publisher, Meta
 	for rows.Next() {
 		var publisher Publisher
 
-		err := rows.Scan(&totalRecords, &publisher.ID, &publisher.Name)
+		err := rows.Scan(&totalRecords, &publisher.ID, &publisher.Name, &publisher.Slug, &publisher.Books)
 		if err != nil {
 			return nil, Metadata{}, err
 		}

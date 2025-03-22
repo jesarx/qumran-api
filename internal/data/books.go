@@ -21,11 +21,15 @@ type Book struct {
 	AuthorID        int64     `json:"author_id,omitempty"`
 	AuthorName      string    `json:"author_name,omitempty"`
 	AuthorLastName  string    `json:"author_last_name,omitempty"`
+	AuthorSlug      string    `json:"author_slug,omitempty"`
 	Author2ID       *int64    `json:"author2_id,omitempty"`
 	Author2Name     *string   `json:"author2_name,omitempty"`
 	Author2LastName *string   `json:"author2_last_name,omitempty"`
+	Author2Slug     *string   `json:"author2_slug,omitempty"`
 	PublisherID     int64     `json:"publisher_id,omitempty"`
 	PublisherName   string    `json:"publisher_name,omitempty"`
+	PublisherSlug   string    `json:"publisher_slug,omitempty"`
+	DirDwl          bool      `json:"dir_dwl,omitempty"`
 	Slug            string    `json:"slug,omitempty"`
 	Version         int32     `json:"version"`
 	Filename        string    `json:"filename,omitempty"`
@@ -59,12 +63,12 @@ type BookModel struct {
 
 func (b BookModel) Insert(book *Book) error {
 	query := `
-    INSERT INTO books (title, short_title, year, tags, auth_id, pub_id, filename, isbn, description, pages, external_link)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    INSERT INTO books (title, short_title, year, tags, auth_id, auth2_id, pub_id, filename, isbn, description, pages, external_link)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING id, created_at
   `
 
-	args := []any{book.Title, book.ShortTitle, book.Year, pq.Array(book.Tags), book.AuthorID, book.PublisherID, book.Filename, book.ISBN, book.Description, book.Pages, book.ExternalLink}
+	args := []any{book.Title, book.ShortTitle, book.Year, pq.Array(book.Tags), book.AuthorID, book.Author2ID, book.PublisherID, book.Filename, book.ISBN, book.Description, book.Pages, book.ExternalLink}
 
 	return b.DB.QueryRow(query, args...).Scan(&book.ID, &book.CreatedAt)
 }
@@ -132,11 +136,14 @@ func (b BookModel) GetBySlug(slug string) (*Book, error) {
   b.auth_id, 
   a1.name AS author_name, 
   a1.last_name AS author_last_name,
+  a1.slug AS author_slug,
   b.auth2_id,
   a2.name AS author_name_2,
   a2.last_name AS author_last_name_2,
+  a2.slug AS author2_slug,
   b.pub_id, 
   p.name AS publisher_name,
+  p.slug AS publisher_slug,
   b.version,
   b.slug,
   b.filename,
@@ -159,8 +166,8 @@ WHERE
 	var book Book
 	err := b.DB.QueryRow(query, slug).Scan(
 		&book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags),
-		&book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.Author2ID, &book.Author2Name, &book.Author2LastName, &book.PublisherID,
-		&book.PublisherName, &book.Version, &book.Slug, &book.Filename, &book.Description, &book.Pages, &book.ISBN, &book.ExternalLink,
+		&book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.AuthorSlug, &book.Author2ID, &book.Author2Name, &book.Author2LastName, &book.Author2Slug, &book.PublisherID,
+		&book.PublisherName, &book.PublisherSlug, &book.Version, &book.Slug, &book.Filename, &book.Description, &book.Pages, &book.ISBN, &book.ExternalLink,
 	)
 	if err != nil {
 		switch {
@@ -229,7 +236,7 @@ func (b BookModel) Delete(id int64) error {
 	return nil
 }
 
-func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book, Metadata, error) {
+func (b BookModel) GetAll(title string, authslug string, pubslug string, tags []string, filters Filters) ([]*Book, Metadata, error) {
 	query := fmt.Sprintf(`
     SELECT 
         count(*) OVER(),
@@ -247,9 +254,13 @@ func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book
         b.version,
         a.name AS author_name,
         a.last_name AS author_last_name,
+        a.slug AS author_slug,
         a2.name AS author_name_2,
         a2.last_name AS author_last_name_2,
-        p.name AS publisher_name
+        a2.slug AS author2_slug,
+        p.name AS publisher_name,
+        p.slug AS publisher_slug,
+        b.dir_dwl
     FROM 
         books b
     JOIN 
@@ -261,6 +272,8 @@ func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book
     WHERE 
         (to_tsvector('spanish', b.title) @@ plainto_tsquery('spanish', $1) OR $1 = '') 
         AND (b.tags @> $2 OR $2 = '{}')
+        AND ($5 = '' OR a.slug = $5 OR a2.slug = $5)
+        AND ($6 = '' OR p.slug = $6)
     ORDER BY 
         %s %s, b.title ASC
     LIMIT $3 OFFSET $4
@@ -269,7 +282,7 @@ func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	args := []any{title, pq.Array(tags), filters.limit(), filters.offset()}
+	args := []any{title, pq.Array(tags), filters.limit(), filters.offset(), authslug, pubslug}
 
 	rows, err := b.DB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -300,9 +313,13 @@ func (b BookModel) GetAll(title string, tags []string, filters Filters) ([]*Book
 			&book.Version,
 			&book.AuthorName,
 			&book.AuthorLastName,
+			&book.AuthorSlug,
 			&book.Author2Name,
 			&book.Author2LastName,
-			&book.PublisherName)
+			&book.Author2Slug,
+			&book.PublisherName,
+			&book.PublisherSlug,
+			&book.DirDwl)
 		if err != nil {
 			return nil, Metadata{}, err
 		}

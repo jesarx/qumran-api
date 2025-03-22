@@ -17,6 +17,8 @@ func (app *application) routes() http.Handler {
 
 	router.HandlerFunc(http.MethodGet, "/v1/images", app.serveImages)
 	router.HandlerFunc(http.MethodGet, "/v1/pdfs", app.servePdfs)
+	router.HandlerFunc(http.MethodGet, "/v1/epubs", app.serveEpubs)
+	router.HandlerFunc(http.MethodGet, "/v1/torrs", app.serveTorrents)
 
 	router.HandlerFunc(http.MethodGet, "/v1/books", app.listBookHandler)
 	router.HandlerFunc(http.MethodPost, "/v1/books", app.requirePermission("books:write", app.createBookHandler))
@@ -31,6 +33,8 @@ func (app *application) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/publishers", app.requirePermission("books:write", app.createPublisherHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/publishers", app.listPublishersHandler)
 	router.HandlerFunc(http.MethodGet, "/v1/publishers/:id", app.showPublisherHandler)
+
+	router.HandlerFunc(http.MethodGet, "/v1/tags", app.listTagsHandler)
 
 	router.HandlerFunc(http.MethodPost, "/v1/users", app.registerUserHandler)
 	router.HandlerFunc(http.MethodPut, "/v1/users/activated", app.activateUserHandler)

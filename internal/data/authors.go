@@ -15,6 +15,8 @@ type Author struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	LastName  string    `json:"last_name"`
+	Slug      string    `json:"slug"`
+	Books     int64     `json:"books"`
 	CreatedAt time.Time `json:"-"`
 }
 
@@ -104,13 +106,15 @@ func (m AuthorModel) Get(id int64, filters Filters) (*Author, []*Book, Metadata,
 
 func (m AuthorModel) GetAll(name string, last_name string, filters Filters) ([]*Author, Metadata, error) {
 	query := fmt.Sprintf(`
-        SELECT count(*) OVER(), id, name, last_name
-        FROM authors
-        WHERE (to_tsvector('simple', name) @@ plainto_tsquery('simple', $1) OR $1 = '')
-        AND (to_tsvector('simple', last_name) @@ plainto_tsquery('simple', $2) OR $2 = '')
-        ORDER by %s %s, last_name ASC
-        LIMIT $3 OFFSET $4
-    `, filters.sortColumn(), filters.sortDirection())
+    SELECT count(*) OVER(), a.id, a.name, a.last_name, a.slug, COUNT(b.id) as book_count
+    FROM authors a
+    LEFT JOIN books b ON a.id = b.auth_id
+    WHERE (to_tsvector('simple', a.name) @@ plainto_tsquery('simple', $1) OR $1 = '')
+    AND (to_tsvector('simple', a.last_name) @@ plainto_tsquery('simple', $2) OR $2 = '')
+    GROUP BY a.id, a.name, a.last_name
+    ORDER by %s %s, a.last_name ASC
+    LIMIT $3 OFFSET $4
+`, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -129,7 +133,7 @@ func (m AuthorModel) GetAll(name string, last_name string, filters Filters) ([]*
 	for rows.Next() {
 		var author Author
 
-		err := rows.Scan(&totalRecords, &author.ID, &author.Name, &author.LastName)
+		err := rows.Scan(&totalRecords, &author.ID, &author.Name, &author.LastName, &author.Slug, &author.Books)
 		if err != nil {
 			return nil, Metadata{}, err
 		}

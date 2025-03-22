@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -151,7 +152,7 @@ func (app *application) CleanString(str string) string {
 	return strings.ReplaceAll(result, " ", "_")
 }
 
-func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdfField string, imageField string, shortTitle string, authorID int64) (map[string]string, error) {
+func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdfField string, imageField string, shortTitle string, authorID int64, publisherID int64) (map[string]string, error) {
 	var fileData struct {
 		FileName     string
 		baseFilename string
@@ -190,6 +191,13 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	if err != nil {
 		return nil, err
 	}
+
+	publisher, _, _, err := app.models.Publishers.Get(publisherID, data.Filters{
+		Page:         1,
+		PageSize:     1,
+		Sort:         "id",
+		SortSafelist: []string{"id"},
+	})
 
 	// Generate a unique filename (without extension)
 	baseFileName := fmt.Sprintf("%s_%s-%s", app.CleanString(author.LastName), app.CleanString(author.Name), app.CleanString(shortTitle))
@@ -244,6 +252,36 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	_, err = io.Copy(imageDst, imageFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save image file: %w", err)
+	}
+
+	// Retrieve the information needed for the metadata.
+
+	// Run exiftool on the PDF file to remove all metadata
+	pdfExifCmd := exec.Command("exiftool", "-all:all=", fileData.PDFPath)
+	pdfExifOutput, err := pdfExifCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run exiftool on PDF: %w, output: %s", err, string(pdfExifOutput))
+	}
+
+	// Now add specific metadata to the PDF
+	// Using the data you have from the author and other parameters
+	pdfMetadataCmd := exec.Command("exiftool",
+		"-charset", "exif=UTF8",
+		"-Title="+shortTitle,
+		"-Author="+author.Name+" "+author.LastName,
+		"-Publisher="+publisher.Name, // You might want to pass this as a parameter
+		fileData.PDFPath)
+
+	pdfMetadataOutput, err := pdfMetadataCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to add metadata to PDF: %w, output: %s", err, string(pdfMetadataOutput))
+	}
+
+	// Run exiftool on the image file to remove all metadata
+	imageExifCmd := exec.Command("exiftool", "-all:all=", fileData.ImagePath)
+	imageExifOutput, err := imageExifCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run exiftool on image: %w, output: %s", err, string(imageExifOutput))
 	}
 
 	// Return success

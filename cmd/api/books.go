@@ -17,10 +17,12 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		Tags         []string `json:"tags"`
 		Year         int32    `json:"year"`
 		AuthorID     int64    `json:"author_id"`
+		Author2ID    *int64   `json:"author2_id"`
 		PublisherID  int64    `json:"publisher_id"`
 		ISBN         string   `json:"isbn"`
 		Description  string   `json:"description"`
 		Pages        int32    `json:"pages"`
+		DirDwl       bool     `json:"dir_dwl"`
 		ExternalLink string   `json:"external_link"`
 	}
 
@@ -32,7 +34,7 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := app.processFiles(w, r, "pdf", "image", input.ShortTitle, input.AuthorID)
+	result, err := app.processFiles(w, r, "pdf", "image", input.ShortTitle, input.AuthorID, input.PublisherID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -46,11 +48,13 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		Year:         input.Year,
 		Tags:         input.Tags,
 		AuthorID:     input.AuthorID,
+		Author2ID:    input.Author2ID,
 		PublisherID:  input.PublisherID,
 		Filename:     baseFilename,
 		ISBN:         input.ISBN,
 		Description:  input.Description,
 		Pages:        input.Pages,
+		DirDwl:       input.DirDwl,
 		ExternalLink: input.ExternalLink,
 	}
 
@@ -204,8 +208,10 @@ func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Reques
 
 func (app *application) listBookHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Title string
-		Tags  []string
+		Title    string
+		AuthSlug string
+		PubSlug  string
+		Tags     []string
 		data.Filters
 	}
 
@@ -214,6 +220,9 @@ func (app *application) listBookHandler(w http.ResponseWriter, r *http.Request) 
 	qs := r.URL.Query()
 
 	input.Title = app.readString(qs, "title", "")
+	input.AuthSlug = app.readString(qs, "authslug", "")
+	input.PubSlug = app.readString(qs, "pubslug", "")
+
 	input.Tags = app.readCSV(qs, "tags", []string{})
 
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
@@ -227,7 +236,7 @@ func (app *application) listBookHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	books, metadata, err := app.models.Books.GetAll(input.Title, input.Tags, input.Filters)
+	books, metadata, err := app.models.Books.GetAll(input.Title, input.AuthSlug, input.PubSlug, input.Tags, input.Filters)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

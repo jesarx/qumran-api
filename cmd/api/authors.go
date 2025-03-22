@@ -26,7 +26,7 @@ func (app *application) listAuthorsHandler(w http.ResponseWriter, r *http.Reques
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 
-	input.Filters.Sort = app.readString(qs, "sort", "id")
+	input.Filters.Sort = app.readString(qs, "sort", "last_name")
 	input.Filters.SortSafelist = []string{"name", "-name", "last_name", "-last_name", "id", "-id"}
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {

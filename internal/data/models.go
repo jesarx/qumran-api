@@ -14,6 +14,7 @@ type Models struct {
 	Books       BookModel
 	Authors     AuthorModel
 	Publishers  PublisherModel
+	Tags        TagModel
 	Permissions PermissionModel
 	Tokens      TokenModel
 	Users       UserModel
@@ -24,6 +25,7 @@ func NewModels(db *sql.DB) Models {
 		Books:       BookModel{DB: db},
 		Authors:     AuthorModel{DB: db},
 		Publishers:  PublisherModel{DB: db},
+		Tags:        TagModel{DB: db},
 		Permissions: PermissionModel{DB: db},
 		Tokens:      TokenModel{DB: db},
 		Users:       UserModel{DB: db},
