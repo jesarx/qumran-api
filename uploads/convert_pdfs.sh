@@ -17,7 +17,9 @@ for pdf_file in pdfs/*.pdf; do
   echo "Converting $pdf_file to $epub_file"
 
   # Convert the PDF to EPUB using Calibre's ebook-convert with recommended options
-  ebook-convert "$pdf_file" "$epub_file" --no-images --enable-heuristics \
+  ebook-convert "$pdf_file" "$epub_file" \
+    --no-images --enable-heuristics \
+    --remove-paragraph-spacing \
     --chapter-mark="pagebreak" --base-font-size=12 --asciiize
 
   # Check if conversion was successful

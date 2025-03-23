@@ -153,11 +153,21 @@ func (app *application) CleanString(str string) string {
 }
 
 func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdfField string, imageField string, shortTitle string, authorID int64, publisherID int64) (map[string]string, error) {
+	// Define trackers for torrent files (can be modified as needed)
+	trackers := []string{
+		"udp://tracker.opentrackr.org:1337/announce",
+		"udp://open.demonii.com:1337/announce",
+		"udp://tracker.torrent.eu.org:451/announce",
+	}
+
 	var fileData struct {
 		FileName     string
 		baseFilename string
-		PDFPath      string
 		ImagePath    string
+		PDFPath      string
+		EPUBPath     string
+		EPUBTorrPath string
+		PDFTorrPath  string
 	}
 
 	// Retrieve the PDF file
@@ -198,6 +208,9 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		Sort:         "id",
 		SortSafelist: []string{"id"},
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	// Generate a unique filename (without extension)
 	baseFileName := fmt.Sprintf("%s_%s-%s", app.CleanString(author.LastName), app.CleanString(author.Name), app.CleanString(shortTitle))
@@ -206,28 +219,27 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	pdfExtension := filepath.Ext(pdfHeader.Filename)
 	fileData.FileName = baseFileName + pdfExtension
 
-	// Define the target directory
+	// Define the target directories
 	pdfTargetDir := "../../uploads/pdfs"
+	imageTargetDir := "../../uploads/covers"
+	epubTargetDir := "../../uploads/epubs"
+	torrentTargetDir := "../../uploads/torrents"
 
-	// Create the directory (and any necessary parent directories) if it doesn't exist
-	if err := os.MkdirAll(pdfTargetDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
+	// Create the directories if they don't exist
+	for _, dir := range []string{pdfTargetDir, imageTargetDir, epubTargetDir, torrentTargetDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
 	}
 
 	fileData.PDFPath = filepath.Join(pdfTargetDir, fileData.FileName)
+	fileData.EPUBPath = filepath.Join(epubTargetDir, baseFileName+".epub")
+	fileData.PDFTorrPath = filepath.Join(torrentTargetDir, baseFileName+".pdf.torrent")
+	fileData.EPUBTorrPath = filepath.Join(torrentTargetDir, baseFileName+".epub.torrent")
 
 	// Define image file details
 	imageExtension := ".jpg"
 	imageFileName := baseFileName + imageExtension
-
-	// Define the target directory
-	imageTargetDir := "../../uploads/covers"
-
-	// Create the directory (and any necessary parent directories) if it doesn't exist
-	if err := os.MkdirAll(imageTargetDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
-	}
-
 	fileData.ImagePath = filepath.Join(imageTargetDir, imageFileName)
 
 	// Save the PDF file
@@ -254,8 +266,6 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		return nil, fmt.Errorf("failed to save image file: %w", err)
 	}
 
-	// Retrieve the information needed for the metadata.
-
 	// Run exiftool on the PDF file to remove all metadata
 	pdfExifCmd := exec.Command("exiftool", "-all:all=", fileData.PDFPath)
 	pdfExifOutput, err := pdfExifCmd.CombinedOutput()
@@ -264,12 +274,11 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	}
 
 	// Now add specific metadata to the PDF
-	// Using the data you have from the author and other parameters
 	pdfMetadataCmd := exec.Command("exiftool",
 		"-charset", "exif=UTF8",
 		"-Title="+shortTitle,
 		"-Author="+author.Name+" "+author.LastName,
-		"-Publisher="+publisher.Name, // You might want to pass this as a parameter
+		"-Publisher="+publisher.Name,
 		fileData.PDFPath)
 
 	pdfMetadataOutput, err := pdfMetadataCmd.CombinedOutput()
@@ -284,11 +293,58 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		return nil, fmt.Errorf("failed to run exiftool on image: %w, output: %s", err, string(imageExifOutput))
 	}
 
-	// Return success
+	// Create EPUB from PDF using ebook-convert
+	ebookConvertCmd := exec.Command("ebook-convert",
+		fileData.PDFPath,
+		fileData.EPUBPath,
+		"--no-images",
+		"--enable-heuristics",
+		"--remove-paragraph-spacing",
+		"--base-font-size=12",
+		"--asciiize",
+		"--title="+shortTitle,
+		"--authors="+author.Name+" "+author.LastName,
+		"--publisher="+publisher.Name,
+		"--cover="+fileData.ImagePath)
+
+	ebookConvertOutput, err := ebookConvertCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert PDF to EPUB: %w, output: %s", err, string(ebookConvertOutput))
+	}
+
+	// Create torrent file for PDF using transmission-create
+	trackersArg := strings.Join(trackers, ",")
+	pdfTorrentCmd := exec.Command("transmission-create",
+		"-o", fileData.PDFTorrPath,
+		"-c", fmt.Sprintf("%s by %s %s", shortTitle, author.Name, author.LastName),
+		"-t", trackersArg,
+		fileData.PDFPath)
+
+	pdfTorrentOutput, err := pdfTorrentCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PDF torrent: %w, output: %s", err, string(pdfTorrentOutput))
+	}
+
+	// Create torrent file for EPUB using transmission-create
+	epubTorrentCmd := exec.Command("transmission-create",
+		"-o", fileData.EPUBTorrPath,
+		"-c", fmt.Sprintf("%s by %s %s", shortTitle, author.Name, author.LastName),
+		"-t", trackersArg,
+		fileData.EPUBPath)
+
+	epubTorrentOutput, err := epubTorrentCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create EPUB torrent: %w, output: %s", err, string(epubTorrentOutput))
+	}
+
+	// Return success with all file paths
 	return map[string]string{
-		"pdf":      fileData.PDFPath,
-		"image":    fileData.ImagePath,
-		"filename": baseFileName,
+		"pdf":          fileData.PDFPath,
+		"image":        fileData.ImagePath,
+		"epub":         fileData.EPUBPath,
+		"pdf_torrent":  fileData.PDFTorrPath,
+		"epub_torrent": fileData.EPUBTorrPath,
+		"filename":     baseFileName,
 	}, nil
 }
 

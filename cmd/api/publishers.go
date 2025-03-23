@@ -25,7 +25,7 @@ func (app *application) listPublishersHandler(w http.ResponseWriter, r *http.Req
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 
 	input.Filters.Sort = app.readString(qs, "sort", "name")
-	input.Filters.SortSafelist = []string{"id", "name", "-id", "-name"}
+	input.Filters.SortSafelist = []string{"id", "name", "-id", "-name", "book_count", "-book_count"}
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
