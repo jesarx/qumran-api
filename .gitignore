@@ -2,3 +2,5 @@ config.yaml
 .git
 uploads/pdfs/*
 uploads/covers/*
+uploads/epubs/*
+uploads/torrents/*
