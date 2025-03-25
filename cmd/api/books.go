@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"qumran.jesarx.com/internal/data"
 	"qumran.jesarx.com/internal/validator"
@@ -118,7 +120,6 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 		app.notFoundResponse(w, r)
 		return
 	}
-
 	book, err := app.models.Books.GetByID(id)
 	if err != nil {
 		switch {
@@ -131,33 +132,95 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	var input struct {
-		Title      *string  `json:"title"`
-		ShortTitle *string  `json:"short_title"`
-		Year       *int32   `json:"year"`
-		Tags       []string `json:"tags"`
+		Title        *string  `json:"title"`
+		ShortTitle   *string  `json:"short_title"`
+		Tags         []string `json:"tags"`
+		Year         *int32   `json:"year"`
+		AuthorID     *int64   `json:"author_id"`
+		Author2ID    *int64   `json:"author2_id"`
+		PublisherID  *int64   `json:"publisher_id"`
+		ISBN         *string  `json:"isbn"`
+		Description  *string  `json:"description"`
+		Pages        *int32   `json:"pages"`
+		DirDwl       *bool    `json:"dir_dwl"`
+		ExternalLink *string  `json:"external_link"`
 	}
 
-	err = app.readJSON(w, r, &input)
+	// FILE UPLOAD
+	err = app.readJSONFromForm(w, r, "data", &input)
 	if err != nil {
 		app.badRequestResponse(w, r, err)
 		return
 	}
 
+	result, err := app.processFiles(w, r, "pdf", "image",
+		func() string {
+			if input.ShortTitle != nil {
+				return *input.ShortTitle
+			}
+			return book.ShortTitle
+		}(),
+		func() int64 {
+			if input.AuthorID != nil {
+				return *input.AuthorID
+			}
+			return book.AuthorID
+		}(),
+		func() int64 {
+			if input.PublisherID != nil {
+				return *input.PublisherID
+			}
+			return book.PublisherID
+		}())
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Update book fields if they are provided
 	if input.Title != nil {
 		book.Title = *input.Title
-	}
-	if input.Year != nil {
-		book.Year = *input.Year
 	}
 	if input.ShortTitle != nil {
 		book.ShortTitle = *input.ShortTitle
 	}
+	if input.Year != nil {
+		book.Year = *input.Year
+	}
 	if input.Tags != nil {
 		book.Tags = input.Tags
 	}
+	if input.AuthorID != nil {
+		book.AuthorID = *input.AuthorID
+	}
+	if input.Author2ID != nil {
+		book.Author2ID = input.Author2ID
+	}
+	if input.PublisherID != nil {
+		book.PublisherID = *input.PublisherID
+	}
+	if input.ISBN != nil {
+		book.ISBN = *input.ISBN
+	}
+	if input.Description != nil {
+		book.Description = *input.Description
+	}
+	if input.Pages != nil {
+		book.Pages = *input.Pages
+	}
+	if input.DirDwl != nil {
+		book.DirDwl = *input.DirDwl
+	}
+	if input.ExternalLink != nil {
+		book.ExternalLink = *input.ExternalLink
+	}
+
+	// If a new file was uploaded, update the filename
+	if baseFilename, exists := result["filename"]; exists && baseFilename != "" {
+		book.Filename = baseFilename
+	}
 
 	v := validator.New()
-
 	if data.ValidateBook(v, book); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
@@ -171,24 +234,70 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 		default:
 			app.serverErrorResponse(w, r, err)
 		}
-
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusOK, envelope{"book": book}, nil)
+	completeBook, err := app.models.Books.GetByID(book.ID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, envelope{"book": completeBook}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
 }
 
 // DELETE BOOK
-func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readIDParam(r)
 	if err != nil {
 		app.notFoundResponse(w, r)
 		return
 	}
 
+	// First, retrieve the book to get its filename and check existence
+	book, err := app.models.Books.GetByID(id)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// Define base paths for different file types
+	basePath := book.Filename
+	uploadDirs := map[string]string{
+		"pdf":          "../../uploads/pdfs",
+		"cover":        "../../uploads/covers",
+		"epub":         "../../uploads/epubs",
+		"pdf_torrent":  "../../uploads/torrents",
+		"epub_torrent": "../../uploads/torrents",
+	}
+
+	// Files to delete
+	filesToDelete := []string{
+		filepath.Join(uploadDirs["pdf"], basePath+".pdf"),
+		filepath.Join(uploadDirs["cover"], basePath+".jpg"),
+		filepath.Join(uploadDirs["epub"], basePath+".epub"),
+		filepath.Join(uploadDirs["pdf_torrent"], basePath+".pdf.torrent"),
+		filepath.Join(uploadDirs["epub_torrent"], basePath+".epub.torrent"),
+	}
+
+	// Delete associated files
+	for _, filePath := range filesToDelete {
+		if err := os.Remove(filePath); err != nil {
+			if !os.IsNotExist(err) {
+				app.logger.Error("Error deleting file %s: %v", filePath, err)
+			}
+		}
+	}
+
+	// Delete the book record from the database
 	err = app.models.Books.Delete(id)
 	if err != nil {
 		switch {
@@ -200,7 +309,7 @@ func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusOK, envelope{"message": "movie successfully deleted"}, nil)
+	err = app.writeJSON(w, http.StatusOK, envelope{"message": "book successfully deleted"}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}

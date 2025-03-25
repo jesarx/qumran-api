@@ -41,6 +41,56 @@ func (m AuthorModel) Insert(author *Author) error {
 	return m.DB.QueryRow(query, args...).Scan(&author.ID)
 }
 
+func (m AuthorModel) Update(author *Author) error {
+	query := `
+		WITH book_count AS (
+			SELECT COUNT(*) as count 
+			FROM books 
+			WHERE auth_id = $1 OR auth2_id = $1
+		)
+		DELETE FROM authors 
+		WHERE id = $1 
+		AND (SELECT count FROM book_count) = 0
+	`
+
+	args := []any{author.Name, author.LastName, author.ID}
+	err := m.DB.QueryRow(query, args...).Scan(&author.Slug)
+	return err
+}
+
+func (m AuthorModel) Delete(id int64) error {
+	// First, check if the author has any associated books
+	query := `
+		WITH book_count AS (
+			SELECT COUNT(*) as count 
+			FROM books 
+			WHERE auth_id = $1
+		)
+		DELETE FROM authors 
+		WHERE id = $1 
+		AND (SELECT count FROM book_count) = 0
+	`
+
+	result, err := m.DB.Exec(query, id)
+	if err != nil {
+		return err
+	}
+
+	// Check how many rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	// If no rows were deleted, it means either the author doesn't exist
+	// or has associated books
+	if rowsAffected == 0 {
+		return fmt.Errorf("author not found or has associated books")
+	}
+
+	return nil
+}
+
 func (m AuthorModel) Get(id int64, filters Filters) (*Author, []*Book, Metadata, error) {
 	if id < 1 {
 		return nil, nil, Metadata{}, ErrRecordNotFound
@@ -106,11 +156,20 @@ func (m AuthorModel) Get(id int64, filters Filters) (*Author, []*Book, Metadata,
 
 func (m AuthorModel) GetAll(name string, last_name string, filters Filters) ([]*Author, Metadata, error) {
 	query := fmt.Sprintf(`
-    SELECT count(*) OVER(), a.id, a.name, a.last_name, a.slug, COUNT(b.id) as book_count
+    SELECT count(*) OVER(), a.id, a.name, a.last_name, a.slug, 
+           COUNT(DISTINCT 
+               CASE WHEN b.auth_id = a.id OR b.auth2_id = a.id 
+               THEN b.id END
+           ) as book_count
     FROM authors a
-    LEFT JOIN books b ON a.id = b.auth_id
-    WHERE (to_tsvector('simple', a.name) @@ plainto_tsquery('simple', $1) OR $1 = '')
-    AND (to_tsvector('simple', a.last_name) @@ plainto_tsquery('simple', $2) OR $2 = '')
+    LEFT JOIN books b ON (a.id = b.auth_id OR a.id = b.auth2_id)
+    WHERE (
+        to_tsvector('simple', unaccent(a.name || ' ' || a.last_name)) @@ plainto_tsquery('simple', unaccent($1))
+        OR to_tsvector('simple', unaccent(a.name)) @@ plainto_tsquery('simple', unaccent($1))
+        OR to_tsvector('simple', unaccent(a.last_name)) @@ plainto_tsquery('simple', unaccent($1))
+        OR $1 = ''
+    )
+    AND (to_tsvector('simple', unaccent(a.last_name)) @@ plainto_tsquery('simple', unaccent($2)) OR $2 = '')
     GROUP BY a.id, a.name, a.last_name
     ORDER by %s %s, a.last_name ASC
     LIMIT $3 OFFSET $4

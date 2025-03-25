@@ -63,7 +63,6 @@ func (app *application) showAuthorHandler(w http.ResponseWriter, r *http.Request
 	v := validator.New()
 
 	qs := r.URL.Query()
-	fmt.Println(qs)
 
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
@@ -126,6 +125,83 @@ func (app *application) createAuthorHandler(w http.ResponseWriter, r *http.Reque
 	headers.Set("Location", fmt.Sprintf("/v1/authors/%d", author.ID))
 
 	err = app.writeJSON(w, http.StatusCreated, envelope{"author": author}, headers)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) updateAuthorHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract the author ID from the URL
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	// Parse the input JSON
+	var input struct {
+		Name     string `json:"name"`
+		LastName string `json:"last_name"`
+	}
+	err = app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	// Create an author object with the new details
+	author := &data.Author{
+		ID:       id,
+		Name:     input.Name,
+		LastName: input.LastName,
+	}
+
+	// Validate the author
+	v := validator.New()
+	if data.ValidateAuthor(v, author); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	// Update the author
+	err = app.models.Authors.Update(author)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Return the updated author
+	err = app.writeJSON(w, http.StatusOK, envelope{"author": author}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) deleteAuthorHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract the author ID from the URL
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	// Attempt to delete the author
+	err = app.models.Authors.Delete(id)
+	if err != nil {
+		// Check if the error is due to associated books
+		if err.Error() == "author not found or has associated books" {
+			app.errorResponse(w, r, http.StatusConflict,
+				"Cannot delete author with associated books")
+			return
+		}
+
+		// Handle other potential errors
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Return a 204 No Content response on successful deletion
+	err = app.writeJSON(w, http.StatusNoContent, envelope{}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}

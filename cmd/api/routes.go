@@ -24,15 +24,19 @@ func (app *application) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/books", app.requirePermission("books:write", app.createBookHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/books/:slug", app.showBookHandler)
 	router.HandlerFunc(http.MethodPatch, "/v1/books/:id", app.requirePermission("books:write", app.updateBookHandler))
-	router.HandlerFunc(http.MethodDelete, "/v1/books/:id", app.requirePermission("books:write", app.deleteMovieHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/books/:id", app.requirePermission("books:write", app.deleteBookHandler))
 
 	router.HandlerFunc(http.MethodPost, "/v1/authors", app.requirePermission("books:write", app.createAuthorHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/authors", app.listAuthorsHandler)
 	router.HandlerFunc(http.MethodGet, "/v1/authors/:id", app.showAuthorHandler)
+	router.HandlerFunc(http.MethodPatch, "/v1/authors/:id", app.requirePermission("books:write", app.updateAuthorHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/authors/:id", app.requirePermission("books:write", app.deleteAuthorHandler))
 
 	router.HandlerFunc(http.MethodPost, "/v1/publishers", app.requirePermission("books:write", app.createPublisherHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/publishers", app.listPublishersHandler)
 	router.HandlerFunc(http.MethodGet, "/v1/publishers/:id", app.showPublisherHandler)
+	router.HandlerFunc(http.MethodPatch, "/v1/publishers/:id", app.requirePermission("books:write", app.updatePublisherHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/publishers/:id", app.requirePermission("books:write", app.deletePublisherHandler))
 
 	router.HandlerFunc(http.MethodGet, "/v1/tags", app.listTagsHandler)
 

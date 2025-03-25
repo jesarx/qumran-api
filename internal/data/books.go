@@ -92,7 +92,8 @@ func (b BookModel) GetByID(id int64) (*Book, error) {
       b.pub_id, 
       p.name AS publisher_name,
       b.version,
-      b.slug
+      b.slug,
+      b.filename
     FROM 
       books b
     JOIN 
@@ -106,7 +107,7 @@ func (b BookModel) GetByID(id int64) (*Book, error) {
 	var book Book
 
 	err := b.DB.QueryRow(query, id).Scan(
-		&book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags), &book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.PublisherID, &book.PublisherName, &book.Version, &book.Slug,
+		&book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags), &book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.PublisherID, &book.PublisherName, &book.Version, &book.Slug, &book.Filename,
 	)
 	if err != nil {
 		switch {
@@ -184,8 +185,22 @@ WHERE
 func (b BookModel) Update(book *Book) error {
 	query := `
     UPDATE books
-    SET title = $1, short_title = $2, year = $3, tags = $4, version = version + 1
-    WHERE id = $5 AND version = $6
+    SET 
+        title = $1, 
+        short_title = $2, 
+        year = $3, 
+        tags = $4, 
+        auth_id = $5,
+        auth2_id = $6,
+        pub_id = $7,
+        filename = $8,
+        isbn = $9,
+        description = $10,
+        pages = $11,
+        dir_dwl = $12,
+        external_link = $13,
+        version = version + 1
+    WHERE id = $14 AND version = $15
     RETURNING version
   `
 	args := []any{
@@ -193,10 +208,18 @@ func (b BookModel) Update(book *Book) error {
 		book.ShortTitle,
 		book.Year,
 		pq.Array(book.Tags),
+		book.AuthorID,
+		book.Author2ID,
+		book.PublisherID,
+		book.Filename,
+		book.ISBN,
+		book.Description,
+		book.Pages,
+		book.DirDwl,
+		book.ExternalLink,
 		book.ID,
 		book.Version,
 	}
-
 	err := b.DB.QueryRow(query, args...).Scan(&book.Version)
 	if err != nil {
 		switch {
@@ -206,7 +229,6 @@ func (b BookModel) Update(book *Book) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -270,7 +292,7 @@ func (b BookModel) GetAll(title string, authslug string, pubslug string, tags []
     JOIN 
         publishers p ON b.pub_id = p.id
     WHERE 
-        (to_tsvector('spanish', b.title) @@ plainto_tsquery('spanish', $1) OR $1 = '') 
+        (to_tsvector('spanish', unaccent(b.title)) @@ plainto_tsquery('spanish', unaccent($1)) OR $1 = '') 
         AND (b.tags @> $2 OR $2 = '{}')
         AND ($5 = '' OR a.slug = $5 OR a2.slug = $5)
         AND ($6 = '' OR p.slug = $6)

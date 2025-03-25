@@ -40,6 +40,52 @@ func (m PublisherModel) Insert(publisher *Publisher) error {
 	return m.DB.QueryRow(query, args...).Scan(&publisher.ID)
 }
 
+func (m PublisherModel) Update(publisher *Publisher) error {
+	query := `
+    UPDATE publishers 
+    SET name = $1, 
+        slug = NULL  -- Setting slug to NULL forces PostgreSQL to regenerate it
+    WHERE id = $2
+    RETURNING slug
+  `
+	args := []any{publisher.Name, publisher.ID}
+	err := m.DB.QueryRow(query, args...).Scan(&publisher.Slug)
+	return err
+}
+
+func (m PublisherModel) Delete(id int64) error {
+	// First, check if the publisher has any associated books
+	query := `
+		WITH book_count AS (
+			SELECT COUNT(*) as count 
+			FROM books 
+			WHERE pub_id = $1
+		)
+		DELETE FROM publishers 
+		WHERE id = $1 
+		AND (SELECT count FROM book_count) = 0
+	`
+
+	result, err := m.DB.Exec(query, id)
+	if err != nil {
+		return err
+	}
+
+	// Check how many rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	// If no rows were deleted, it means either the publisher doesn't exist
+	// or has associated books
+	if rowsAffected == 0 {
+		return fmt.Errorf("publisher not found or has associated books")
+	}
+
+	return nil
+}
+
 func (m PublisherModel) Get(id int64, filters Filters) (*Publisher, []*Book, Metadata, error) {
 	if id < 1 {
 		return nil, nil, Metadata{}, ErrRecordNotFound
@@ -108,7 +154,10 @@ func (m PublisherModel) GetAll(name string, filters Filters) ([]*Publisher, Meta
     SELECT count(*) OVER(), p.id, p.name, p.slug, COUNT(b.id) as book_count
     FROM publishers p
     LEFT JOIN books b ON p.id = b.pub_id
-    WHERE (to_tsvector('simple', p.name) @@ plainto_tsquery('simple', $1) OR $1 = '')
+    WHERE (
+        to_tsvector('simple', unaccent(p.name)) @@ plainto_tsquery('simple', unaccent($1)) 
+        OR $1 = ''
+    )
     GROUP BY p.id, p.name
     ORDER by %s %s, p.name ASC
     LIMIT $2 OFFSET $3
