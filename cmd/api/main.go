@@ -44,7 +44,7 @@ type config struct {
 		sender   string
 	}
 	cors struct {
-		tustedOrigins []string
+		trustedOrigins []string
 	}
 }
 
@@ -58,7 +58,7 @@ type application struct {
 
 func main() {
 	// Config file configuration
-	viper.SetConfigFile("../../config.yaml")
+	viper.SetConfigFile("config.yaml")
 	err := viper.ReadInConfig()
 	if err != nil {
 		panic(fmt.Errorf("yaml config file not found: %s ", err))
@@ -87,7 +87,7 @@ func main() {
 	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "Jesarx <jesarx@riseup.net>", "SMTP sender")
 
 	flag.Func("cors-trusted-origins", "Trusted CORS origins (space separated)", func(val string) error {
-		cfg.cors.tustedOrigins = strings.Fields(val)
+		cfg.cors.trustedOrigins = strings.Fields(val)
 		return nil
 	})
 

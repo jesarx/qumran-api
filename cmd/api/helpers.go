@@ -165,8 +165,6 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		baseFilename string
 		ImagePath    string
 		PDFPath      string
-		EPUBPath     string
-		EPUBTorrPath string
 		PDFTorrPath  string
 	}
 
@@ -203,13 +201,12 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	}
 
 	// Define the target directories
-	pdfTargetDir := "../../uploads/pdfs"
-	imageTargetDir := "../../uploads/covers"
-	epubTargetDir := "../../uploads/epubs"
-	torrentTargetDir := "../../uploads/torrents"
+	pdfTargetDir := "./uploads/pdfs"
+	imageTargetDir := "./uploads/covers"
+	torrentTargetDir := "./uploads/torrents"
 
 	// Create the directories if they don't exist
-	for _, dir := range []string{pdfTargetDir, imageTargetDir, epubTargetDir, torrentTargetDir} {
+	for _, dir := range []string{pdfTargetDir, imageTargetDir, torrentTargetDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
@@ -224,9 +221,7 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		pdfExtension := filepath.Ext(pdfHeader.Filename)
 		fileData.FileName = baseFileName + pdfExtension
 		fileData.PDFPath = filepath.Join(pdfTargetDir, fileData.FileName)
-		fileData.EPUBPath = filepath.Join(epubTargetDir, baseFileName+".epub")
 		fileData.PDFTorrPath = filepath.Join(torrentTargetDir, baseFileName+".pdf.torrent")
-		fileData.EPUBTorrPath = filepath.Join(torrentTargetDir, baseFileName+".epub.torrent")
 
 		// Save the PDF file
 		pdfDst, err := os.Create(fileData.PDFPath)
@@ -263,24 +258,6 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 			return nil, fmt.Errorf("failed to add metadata to PDF: %w, output: %s", err, string(pdfMetadataOutput))
 		}
 
-		// Create EPUB from PDF using ebook-convert
-		ebookConvertCmd := exec.Command("ebook-convert",
-			fileData.PDFPath,
-			fileData.EPUBPath,
-			"--no-images",
-			"--enable-heuristics",
-			"--remove-paragraph-spacing",
-			"--base-font-size=12",
-			"--asciiize",
-			"--title="+shortTitle,
-			"--authors="+author.Name+" "+author.LastName,
-			"--publisher="+publisher.Name)
-
-		ebookConvertOutput, err := ebookConvertCmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert PDF to EPUB: %w, output: %s", err, string(ebookConvertOutput))
-		}
-
 		// Create torrent file for PDF using transmission-create
 		trackersArg := strings.Join(trackers, ",")
 		pdfTorrentCmd := exec.Command("transmission-create",
@@ -294,45 +271,69 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 			return nil, fmt.Errorf("failed to create PDF torrent: %w, output: %s", err, string(pdfTorrentOutput))
 		}
 
-		// Create torrent file for EPUB using transmission-create
-		epubTorrentCmd := exec.Command("transmission-create",
-			"-o", fileData.EPUBTorrPath,
-			"-c", fmt.Sprintf("%s by %s %s", shortTitle, author.Name, author.LastName),
-			"-t", trackersArg,
-			fileData.EPUBPath)
-
-		epubTorrentOutput, err := epubTorrentCmd.CombinedOutput()
+		// Add PDF to IPFS
+		ipfsAddCmd := exec.Command("ipfs", "add", "--quiet", fileData.PDFPath)
+		ipfsAddOutput, err := ipfsAddCmd.Output()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create EPUB torrent: %w, output: %s", err, string(epubTorrentOutput))
+			return nil, fmt.Errorf("failed to add PDF to IPFS: %w", err)
 		}
+
+		// Get the CID (Content Identifier) from the output
+		pdfCID := strings.TrimSpace(string(ipfsAddOutput))
 
 		// Add PDF-related files to result
 		result["pdf"] = fileData.PDFPath
-		result["epub"] = fileData.EPUBPath
 		result["pdf_torrent"] = fileData.PDFTorrPath
-		result["epub_torrent"] = fileData.EPUBTorrPath
+		result["pdf_cid"] = pdfCID
 	}
 
 	// Image Processing (Optional)
-	imageFile, _, err := r.FormFile(imageField)
+	imageFile, imageHeader, err := r.FormFile(imageField)
 	if err == nil {
 		defer imageFile.Close()
 
-		// Define image file details
-		imageExtension := ".jpg"
-		imageFileName := baseFileName + imageExtension
+		// Get the original image extension
+		origExt := strings.ToLower(filepath.Ext(imageHeader.Filename))
+
+		// Define image file details - always using jpg as the final format
+		imageFileName := baseFileName + ".jpg"
 		fileData.ImagePath = filepath.Join(imageTargetDir, imageFileName)
 
-		// Save the image file
-		imageDst, err := os.Create(fileData.ImagePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create image file: %w", err)
-		}
-		defer imageDst.Close()
+		// Create a temporary file for the original image if it's not already a JPG
+		var tempImagePath string
+		if origExt != ".jpg" && origExt != ".jpeg" {
+			tempFile, err := os.CreateTemp("", "image-*"+origExt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create temp image file: %w", err)
+			}
+			tempImagePath = tempFile.Name()
+			defer os.Remove(tempImagePath) // Clean up the temp file when done
 
-		_, err = io.Copy(imageDst, imageFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to save image file: %w", err)
+			_, err = io.Copy(tempFile, imageFile)
+			if err != nil {
+				tempFile.Close()
+				return nil, fmt.Errorf("failed to save temp image file: %w", err)
+			}
+			tempFile.Close()
+
+			// Convert the image to JPG using ImageMagick
+			convertCmd := exec.Command("convert", tempImagePath, fileData.ImagePath)
+			convertOutput, err := convertCmd.CombinedOutput()
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert image to JPG: %w, output: %s", err, string(convertOutput))
+			}
+		} else {
+			// Save the image file directly if it's already a JPG
+			imageDst, err := os.Create(fileData.ImagePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create image file: %w", err)
+			}
+			defer imageDst.Close()
+
+			_, err = io.Copy(imageDst, imageFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to save image file: %w", err)
+			}
 		}
 
 		// Run exiftool on the image file to remove all metadata
@@ -346,30 +347,6 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 
 		// Add image-related file to result
 		result["image"] = fileData.ImagePath
-
-		// Update EPUB cover if PDF was processed earlier
-		if _, pdfProcessed := result["pdf"]; pdfProcessed {
-			// Recreate EPUB with cover image
-			ebookConvertCmd := exec.Command("ebook-convert",
-				fileData.PDFPath,
-				fileData.EPUBPath,
-				"--no-images",
-				"--enable-heuristics",
-				"--remove-paragraph-spacing",
-				"--base-font-size=12",
-				"--asciiize",
-				"--title="+shortTitle,
-				"--authors="+author.Name+" "+author.LastName,
-				"--publisher="+publisher.Name,
-				"--cover="+fileData.ImagePath)
-
-			ebookConvertOutput, err := ebookConvertCmd.CombinedOutput()
-			if err != nil {
-				return nil, fmt.Errorf("failed to update EPUB with cover: %w, output: %s", err, string(ebookConvertOutput))
-			}
-
-			result["epub"] = fileData.EPUBPath
-		}
 	}
 
 	return result, nil

@@ -15,7 +15,7 @@ func (app *application) serveImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct the full file path
-	filePath := fmt.Sprintf("../../uploads/covers/%s", fileName)
+	filePath := fmt.Sprintf("./uploads/covers/%s", fileName)
 
 	// Open the file
 	file, err := os.Open(filePath)
@@ -54,7 +54,7 @@ func (app *application) servePdfs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct the full file path
-	filePath := fmt.Sprintf("../../uploads/pdfs/%s", fileName)
+	filePath := fmt.Sprintf("./uploads/pdfs/%s", fileName)
 
 	// Open the file
 	file, err := os.Open(filePath)
@@ -93,7 +93,7 @@ func (app *application) serveEpubs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct the full file path
-	filePath := fmt.Sprintf("../../uploads/epubs/%s", fileName)
+	filePath := fmt.Sprintf("./uploads/epubs/%s", fileName)
 
 	// Open the file
 	file, err := os.Open(filePath)
@@ -132,7 +132,7 @@ func (app *application) serveTorrents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct the full file path
-	filePath := fmt.Sprintf("../../uploads/torrents/%s", fileName)
+	filePath := fmt.Sprintf("./uploads/torrents/%s", fileName)
 
 	// Open the file
 	file, err := os.Open(filePath)
