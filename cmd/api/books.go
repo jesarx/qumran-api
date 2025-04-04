@@ -43,7 +43,7 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	baseFilename := result["filename"]
-	cid := result["cid"]
+	cid := result["pdf_cid"]
 
 	book := &data.Book{
 		Title:        input.Title,
