@@ -153,7 +153,8 @@ func (b BookModel) GetBySlug(slug string) (*Book, error) {
   b.pages,
   b.isbn,
   b.external_link,
-  b.dir_dwl
+  b.dir_dwl,
+	b.cid
 FROM 
   books b
 JOIN 
@@ -170,7 +171,7 @@ WHERE
 	err := b.DB.QueryRow(query, slug).Scan(
 		&book.ID, &book.CreatedAt, &book.Title, &book.ShortTitle, &book.Year, pq.Array(&book.Tags),
 		&book.AuthorID, &book.AuthorName, &book.AuthorLastName, &book.AuthorSlug, &book.Author2ID, &book.Author2Name, &book.Author2LastName, &book.Author2Slug, &book.PublisherID,
-		&book.PublisherName, &book.PublisherSlug, &book.Version, &book.Slug, &book.Filename, &book.Description, &book.Pages, &book.ISBN, &book.ExternalLink, &book.DirDwl,
+		&book.PublisherName, &book.PublisherSlug, &book.Version, &book.Slug, &book.Filename, &book.Description, &book.Pages, &book.ISBN, &book.ExternalLink, &book.DirDwl, &book.Cid,
 	)
 	if err != nil {
 		switch {
