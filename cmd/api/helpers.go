@@ -278,14 +278,6 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 			return nil, fmt.Errorf("failed to create PDF torrent: %w, output: %s", err, string(pdfTorrentOutput))
 		}
 
-		// Add the torrent to the running transmission daemon
-		addTorrentCmd := exec.Command("transmission-remote",
-			"--add", fileData.PDFTorrPath)
-		addTorrentOutput, err := addTorrentCmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("failed to add torrent to transmission daemon: %w, output: %s", err, string(addTorrentOutput))
-		}
-
 		// Add PDF to IPFS
 		ipfsAddCmd := exec.Command("ipfs", "add", "--quiet", fileData.PDFPath)
 		ipfsAddOutput, err := ipfsAddCmd.Output()
