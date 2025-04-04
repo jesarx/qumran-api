@@ -37,6 +37,7 @@ type Book struct {
 	Description     string    `json:"description,omitempty"`
 	Pages           int32     `json:"pages,omitempty"`
 	ExternalLink    string    `json:"external_link,omitempty"`
+	Cid             string    `json:"cid,omitempty"`
 }
 
 func ValidateBook(v *validator.Validator, book *Book) {
@@ -63,12 +64,12 @@ type BookModel struct {
 
 func (b BookModel) Insert(book *Book) error {
 	query := `
-    INSERT INTO books (title, short_title, year, tags, auth_id, auth2_id, pub_id, filename, isbn, description, pages, external_link)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    INSERT INTO books (title, short_title, year, tags, auth_id, auth2_id, pub_id, filename, isbn, description, pages, external_link, cid)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     RETURNING id, created_at
   `
 
-	args := []any{book.Title, book.ShortTitle, book.Year, pq.Array(book.Tags), book.AuthorID, book.Author2ID, book.PublisherID, book.Filename, book.ISBN, book.Description, book.Pages, book.ExternalLink}
+	args := []any{book.Title, book.ShortTitle, book.Year, pq.Array(book.Tags), book.AuthorID, book.Author2ID, book.PublisherID, book.Filename, book.ISBN, book.Description, book.Pages, book.ExternalLink, book.Cid}
 
 	return b.DB.QueryRow(query, args...).Scan(&book.ID, &book.CreatedAt)
 }

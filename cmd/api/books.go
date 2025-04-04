@@ -43,6 +43,7 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	baseFilename := result["filename"]
+	cid := result["cid"]
 
 	book := &data.Book{
 		Title:        input.Title,
@@ -58,6 +59,7 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		Pages:        input.Pages,
 		DirDwl:       input.DirDwl,
 		ExternalLink: input.ExternalLink,
+		Cid:          cid,
 	}
 
 	v := validator.New()
@@ -272,20 +274,16 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 	// Define base paths for different file types
 	basePath := book.Filename
 	uploadDirs := map[string]string{
-		"pdf":          "../../uploads/pdfs",
-		"cover":        "../../uploads/covers",
-		"epub":         "../../uploads/epubs",
-		"pdf_torrent":  "../../uploads/torrents",
-		"epub_torrent": "../../uploads/torrents",
+		"pdf":         "./uploads/pdfs",
+		"cover":       "./uploads/covers",
+		"pdf_torrent": "./uploads/torrents",
 	}
 
 	// Files to delete
 	filesToDelete := []string{
 		filepath.Join(uploadDirs["pdf"], basePath+".pdf"),
 		filepath.Join(uploadDirs["cover"], basePath+".jpg"),
-		filepath.Join(uploadDirs["epub"], basePath+".epub"),
 		filepath.Join(uploadDirs["pdf_torrent"], basePath+".pdf.torrent"),
-		filepath.Join(uploadDirs["epub_torrent"], basePath+".epub.torrent"),
 	}
 
 	// Delete associated files

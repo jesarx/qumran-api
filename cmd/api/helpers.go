@@ -195,7 +195,14 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	}
 
 	// Generate a unique filename (without extension)
-	baseFileName := fmt.Sprintf("%s_%s-%s", app.CleanString(author.LastName), app.CleanString(author.Name), app.CleanString(shortTitle))
+	// Only include author.Name if it's not empty
+	var baseFileName string
+	if author.Name != "" {
+		baseFileName = fmt.Sprintf("%s_%s-%s", app.CleanString(author.LastName), app.CleanString(author.Name), app.CleanString(shortTitle))
+	} else {
+		baseFileName = fmt.Sprintf("%s-%s", app.CleanString(author.LastName), app.CleanString(shortTitle))
+	}
+
 	result := map[string]string{
 		"filename": baseFileName,
 	}
@@ -271,6 +278,14 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 			return nil, fmt.Errorf("failed to create PDF torrent: %w, output: %s", err, string(pdfTorrentOutput))
 		}
 
+		// Add the torrent to the running transmission daemon
+		addTorrentCmd := exec.Command("transmission-remote",
+			"--add", fileData.PDFTorrPath)
+		addTorrentOutput, err := addTorrentCmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("failed to add torrent to transmission daemon: %w, output: %s", err, string(addTorrentOutput))
+		}
+
 		// Add PDF to IPFS
 		ipfsAddCmd := exec.Command("ipfs", "add", "--quiet", fileData.PDFPath)
 		ipfsAddOutput, err := ipfsAddCmd.Output()
@@ -280,6 +295,13 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 
 		// Get the CID (Content Identifier) from the output
 		pdfCID := strings.TrimSpace(string(ipfsAddOutput))
+
+		// Also pin the content to ensure it stays in the IPFS node
+		ipfsPinCmd := exec.Command("ipfs", "pin", "add", pdfCID)
+		ipfsPinOutput, err := ipfsPinCmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("failed to pin PDF in IPFS: %w, output: %s", err, string(ipfsPinOutput))
+		}
 
 		// Add PDF-related files to result
 		result["pdf"] = fileData.PDFPath
@@ -323,7 +345,7 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 				return nil, fmt.Errorf("failed to convert image to JPG: %w, output: %s", err, string(convertOutput))
 			}
 		} else {
-			// Save the image file directly if it's already a JPG
+			// Save the image file directly if it's already a JPG or JPEG
 			imageDst, err := os.Create(fileData.ImagePath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create image file: %w", err)
