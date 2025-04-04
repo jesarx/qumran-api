@@ -4,3 +4,4 @@ uploads/pdfs/*
 uploads/covers/*
 uploads/epubs/*
 uploads/torrents/*
+bin/**
