@@ -262,6 +262,14 @@ func (b BookModel) Delete(id int64) error {
 }
 
 func (b BookModel) GetAll(title string, authslug string, pubslug string, tags []string, filters Filters) ([]*Book, Metadata, error) {
+	var orderClause string
+	if filters.Sort == "random" {
+		orderClause = "ORDER BY random()"
+	} else {
+		orderClause = fmt.Sprintf("ORDER BY %s %s, b.title ASC",
+			filters.sortColumn(), filters.sortDirection())
+	}
+
 	query := fmt.Sprintf(`
     SELECT 
         count(*) OVER(),
@@ -299,10 +307,9 @@ func (b BookModel) GetAll(title string, authslug string, pubslug string, tags []
         AND (b.tags @> $2 OR $2 = '{}')
         AND ($5 = '' OR a.slug = $5 OR a2.slug = $5)
         AND ($6 = '' OR p.slug = $6)
-    ORDER BY 
-        %s %s, b.title ASC
+    %s
     LIMIT $3 OFFSET $4
-`, filters.sortColumn(), filters.sortDirection())
+`, orderClause)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

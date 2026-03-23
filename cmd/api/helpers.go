@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -211,9 +212,10 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	pdfTargetDir := "./uploads/pdfs"
 	imageTargetDir := "./uploads/covers"
 	torrentTargetDir := "./uploads/torrents"
+	torrentAddedDir := "./uploads/torrentadded" // New directory for copied torrents
 
 	// Create the directories if they don't exist
-	for _, dir := range []string{pdfTargetDir, imageTargetDir, torrentTargetDir} {
+	for _, dir := range []string{pdfTargetDir, imageTargetDir, torrentTargetDir, torrentAddedDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
@@ -266,16 +268,33 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		}
 
 		// Create torrent file for PDF using transmission-create
-		trackersArg := strings.Join(trackers, ",")
-		pdfTorrentCmd := exec.Command("transmission-create",
+		// Build the command with separate tracker arguments
+		args := []string{
 			"-o", fileData.PDFTorrPath,
 			"-c", fmt.Sprintf("%s by %s %s", shortTitle, author.Name, author.LastName),
-			"-t", trackersArg,
-			fileData.PDFPath)
+		}
+
+		// Add each tracker individually
+		for _, tracker := range trackers {
+			args = append(args, "--tracker", tracker)
+		}
+
+		// Add the input file path as the last argument
+		args = append(args, fileData.PDFPath)
+
+		// Execute the command with all arguments
+		pdfTorrentCmd := exec.Command("transmission-create", args...)
 
 		pdfTorrentOutput, err := pdfTorrentCmd.CombinedOutput()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create PDF torrent: %w, output: %s", err, string(pdfTorrentOutput))
+		}
+
+		// Copy the torrent file to torrentadded directory
+		torrentAddedPath := filepath.Join(torrentAddedDir, baseFileName+".pdf.torrent")
+		err = copyFile(fileData.PDFTorrPath, torrentAddedPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to copy torrent to torrentadded directory: %w", err)
 		}
 
 		// Add PDF to IPFS
@@ -295,9 +314,21 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 			return nil, fmt.Errorf("failed to pin PDF in IPFS: %w, output: %s", err, string(ipfsPinOutput))
 		}
 
+		// Announce the content to the IPFS network using routing provide
+		ipfsProvideCmd := exec.Command("ipfs", "routing", "provide", pdfCID)
+		ipfsProvideOutput, err := ipfsProvideCmd.CombinedOutput()
+		if err != nil {
+			// We're just logging this error instead of returning, since the file is already added and pinned
+			log.Printf("Warning: failed to provide CID to IPFS network: %v, output: %s", err, string(ipfsProvideOutput))
+			// Continue execution even if the provide command fails
+		} else {
+			log.Printf("Successfully announced CID %s to the IPFS network", pdfCID)
+		}
+
 		// Add PDF-related files to result
 		result["pdf"] = fileData.PDFPath
 		result["pdf_torrent"] = fileData.PDFTorrPath
+		result["torrent_added"] = torrentAddedPath // Add the new path to the result
 		result["pdf_cid"] = pdfCID
 	}
 
@@ -364,6 +395,110 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 	}
 
 	return result, nil
+}
+
+func (app *application) processFilesEdit(w http.ResponseWriter, r *http.Request, imageField string, baseFileName string) (map[string]string, error) {
+	var fileData struct {
+		ImagePath string
+	}
+
+	result := map[string]string{
+		"filename": baseFileName, // Use the existing filename
+	}
+
+	// Define the target directory for images
+	imageTargetDir := "./uploads/covers"
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(imageTargetDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory %s: %w", imageTargetDir, err)
+	}
+
+	// Image Processing (Optional)
+	imageFile, imageHeader, err := r.FormFile(imageField)
+	if err == nil {
+		defer imageFile.Close()
+
+		// Get the original image extension
+		origExt := strings.ToLower(filepath.Ext(imageHeader.Filename))
+
+		// Define image file details - always using jpg as the final format
+		imageFileName := baseFileName + ".jpg"
+		fileData.ImagePath = filepath.Join(imageTargetDir, imageFileName)
+
+		// Create a temporary file for the original image if it's not already a JPG
+		var tempImagePath string
+		if origExt != ".jpg" && origExt != ".jpeg" {
+			tempFile, err := os.CreateTemp("", "image-*"+origExt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create temp image file: %w", err)
+			}
+			tempImagePath = tempFile.Name()
+			defer os.Remove(tempImagePath) // Clean up the temp file when done
+
+			_, err = io.Copy(tempFile, imageFile)
+			if err != nil {
+				tempFile.Close()
+				return nil, fmt.Errorf("failed to save temp image file: %w", err)
+			}
+			tempFile.Close()
+
+			// Convert the image to JPG using ImageMagick
+			convertCmd := exec.Command("convert", tempImagePath, fileData.ImagePath)
+			convertOutput, err := convertCmd.CombinedOutput()
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert image to JPG: %w, output: %s", err, string(convertOutput))
+			}
+		} else {
+			// Save the image file directly if it's already a JPG or JPEG
+			imageDst, err := os.Create(fileData.ImagePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create image file: %w", err)
+			}
+			defer imageDst.Close()
+
+			_, err = io.Copy(imageDst, imageFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to save image file: %w", err)
+			}
+		}
+
+		// Run exiftool on the image file to remove all metadata
+		imageExifCmd := exec.Command("exiftool",
+			"-overwrite_original",
+			"-all:all=", fileData.ImagePath)
+		imageExifOutput, err := imageExifCmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("failed to run exiftool on image: %w, output: %s", err, string(imageExifOutput))
+		}
+
+		// Add image-related file to result
+		result["image"] = fileData.ImagePath
+	}
+
+	return result, nil
+}
+
+// Helper function to copy a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return err
+	}
+
+	return destFile.Sync()
 }
 
 func (app *application) readString(qs url.Values, key string, defaultValue string) string {

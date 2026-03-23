@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"qumran.jesarx.com/internal/data"
@@ -122,6 +123,7 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 		app.notFoundResponse(w, r)
 		return
 	}
+
 	book, err := app.models.Books.GetByID(id)
 	if err != nil {
 		switch {
@@ -148,32 +150,16 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 		ExternalLink *string  `json:"external_link"`
 	}
 
-	// FILE UPLOAD
+	// Read JSON data from form
 	err = app.readJSONFromForm(w, r, "data", &input)
 	if err != nil {
 		app.badRequestResponse(w, r, err)
 		return
 	}
 
-	result, err := app.processFiles(w, r, "pdf", "image",
-		func() string {
-			if input.ShortTitle != nil {
-				return *input.ShortTitle
-			}
-			return book.ShortTitle
-		}(),
-		func() int64 {
-			if input.AuthorID != nil {
-				return *input.AuthorID
-			}
-			return book.AuthorID
-		}(),
-		func() int64 {
-			if input.PublisherID != nil {
-				return *input.PublisherID
-			}
-			return book.PublisherID
-		}())
+	// Process only image file - PDF is no longer modifiable
+	// Use existing filename from the book record
+	_, err = app.processFilesEdit(w, r, "image", book.Filename)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -217,10 +203,7 @@ func (app *application) updateBookHandler(w http.ResponseWriter, r *http.Request
 		book.ExternalLink = *input.ExternalLink
 	}
 
-	// If a new file was uploaded, update the filename
-	if baseFilename, exists := result["filename"]; exists && baseFilename != "" {
-		book.Filename = baseFilename
-	}
+	// Note: We're not updating the filename anymore since it should remain unchanged
 
 	v := validator.New()
 	if data.ValidateBook(v, book); !v.Valid() {
@@ -274,9 +257,10 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 	// Define base paths for different file types
 	basePath := book.Filename
 	uploadDirs := map[string]string{
-		"pdf":         "./uploads/pdfs",
-		"cover":       "./uploads/covers",
-		"pdf_torrent": "./uploads/torrents",
+		"pdf":              "./uploads/pdfs",
+		"cover":            "./uploads/covers",
+		"pdf_torrent":      "./uploads/torrents",
+		"pdf_torrentadded": "./uploads/torrentadded", // Fixed directory name
 	}
 
 	// Files to delete
@@ -284,6 +268,7 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 		filepath.Join(uploadDirs["pdf"], basePath+".pdf"),
 		filepath.Join(uploadDirs["cover"], basePath+".jpg"),
 		filepath.Join(uploadDirs["pdf_torrent"], basePath+".pdf.torrent"),
+		filepath.Join(uploadDirs["pdf_torrentadded"], basePath+".pdf.torrent"),
 	}
 
 	// Delete associated files
@@ -292,6 +277,30 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 			if !os.IsNotExist(err) {
 				app.logger.Error("Error deleting file %s: %v", filePath, err)
 			}
+		}
+	}
+
+	// Handle IPFS unpin and deletion if CID exists
+	if book.Cid != "" {
+		// First unpin the content from IPFS
+		ipfsUnpinCmd := exec.Command("ipfs", "pin", "rm", book.Cid)
+		ipfsUnpinOutput, err := ipfsUnpinCmd.CombinedOutput()
+		if err != nil {
+			// Log the error but continue with deletion
+			app.logger.Error("Error unpinning content from IPFS: %v, output: %s", err, string(ipfsUnpinOutput))
+		} else {
+			app.logger.Info("Successfully unpinned content from IPFS: %s", book.Cid)
+		}
+
+		// Then try to delete the content from IPFS
+		// Note: This might not fully delete the content from the IPFS network
+		// if it's pinned elsewhere, but it removes it from this node
+		ipfsGcCmd := exec.Command("ipfs", "repo", "gc")
+		ipfsGcOutput, err := ipfsGcCmd.CombinedOutput()
+		if err != nil {
+			app.logger.Error("Error running garbage collection on IPFS: %v, output: %s", err, string(ipfsGcOutput))
+		} else {
+			app.logger.Info("Successfully ran garbage collection on IPFS after unpinning %s", book.Cid)
 		}
 	}
 
@@ -336,7 +345,7 @@ func (app *application) listBookHandler(w http.ResponseWriter, r *http.Request) 
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 
 	input.Filters.Sort = app.readString(qs, "sort", "-created_at")
-	input.Filters.SortSafelist = []string{"id", "title", "year", "tags", "-id", "-title", "-year", "-tags", "created_at", "-created_at"}
+	input.Filters.SortSafelist = []string{"id", "title", "year", "tags", "-id", "-title", "-year", "-tags", "created_at", "-created_at", "random"}
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)

@@ -43,16 +43,13 @@ func (m AuthorModel) Insert(author *Author) error {
 
 func (m AuthorModel) Update(author *Author) error {
 	query := `
-		WITH book_count AS (
-			SELECT COUNT(*) as count 
-			FROM books 
-			WHERE auth_id = $1 OR auth2_id = $1
-		)
-		DELETE FROM authors 
-		WHERE id = $1 
-		AND (SELECT count FROM book_count) = 0
-	`
-
+    UPDATE authors 
+    SET name = $1,
+        last_name = $2,
+        slug = NULL  -- Setting slug to NULL forces PostgreSQL to regenerate it
+    WHERE id = $3
+    RETURNING slug
+  `
 	args := []any{author.Name, author.LastName, author.ID}
 	err := m.DB.QueryRow(query, args...).Scan(&author.Slug)
 	return err
