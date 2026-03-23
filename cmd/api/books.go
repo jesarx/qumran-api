@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"qumran.jesarx.com/internal/data"
@@ -44,7 +43,6 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	baseFilename := result["filename"]
-	cid := result["pdf_cid"]
 
 	book := &data.Book{
 		Title:        input.Title,
@@ -60,7 +58,6 @@ func (app *application) createBookHandler(w http.ResponseWriter, r *http.Request
 		Pages:        input.Pages,
 		DirDwl:       input.DirDwl,
 		ExternalLink: input.ExternalLink,
-		Cid:          cid,
 	}
 
 	v := validator.New()
@@ -277,30 +274,6 @@ func (app *application) deleteBookHandler(w http.ResponseWriter, r *http.Request
 			if !os.IsNotExist(err) {
 				app.logger.Error("Error deleting file %s: %v", filePath, err)
 			}
-		}
-	}
-
-	// Handle IPFS unpin and deletion if CID exists
-	if book.Cid != "" {
-		// First unpin the content from IPFS
-		ipfsUnpinCmd := exec.Command("ipfs", "pin", "rm", book.Cid)
-		ipfsUnpinOutput, err := ipfsUnpinCmd.CombinedOutput()
-		if err != nil {
-			// Log the error but continue with deletion
-			app.logger.Error("Error unpinning content from IPFS: %v, output: %s", err, string(ipfsUnpinOutput))
-		} else {
-			app.logger.Info("Successfully unpinned content from IPFS: %s", book.Cid)
-		}
-
-		// Then try to delete the content from IPFS
-		// Note: This might not fully delete the content from the IPFS network
-		// if it's pinned elsewhere, but it removes it from this node
-		ipfsGcCmd := exec.Command("ipfs", "repo", "gc")
-		ipfsGcOutput, err := ipfsGcCmd.CombinedOutput()
-		if err != nil {
-			app.logger.Error("Error running garbage collection on IPFS: %v, output: %s", err, string(ipfsGcOutput))
-		} else {
-			app.logger.Info("Successfully ran garbage collection on IPFS after unpinning %s", book.Cid)
 		}
 	}
 

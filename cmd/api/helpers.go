@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -297,39 +296,10 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 			return nil, fmt.Errorf("failed to copy torrent to torrentadded directory: %w", err)
 		}
 
-		// Add PDF to IPFS
-		ipfsAddCmd := exec.Command("ipfs", "add", "--quiet", fileData.PDFPath)
-		ipfsAddOutput, err := ipfsAddCmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("failed to add PDF to IPFS: %w", err)
-		}
-
-		// Get the CID (Content Identifier) from the output
-		pdfCID := strings.TrimSpace(string(ipfsAddOutput))
-
-		// Also pin the content to ensure it stays in the IPFS node
-		ipfsPinCmd := exec.Command("ipfs", "pin", "add", pdfCID)
-		ipfsPinOutput, err := ipfsPinCmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("failed to pin PDF in IPFS: %w, output: %s", err, string(ipfsPinOutput))
-		}
-
-		// Announce the content to the IPFS network using routing provide
-		ipfsProvideCmd := exec.Command("ipfs", "routing", "provide", pdfCID)
-		ipfsProvideOutput, err := ipfsProvideCmd.CombinedOutput()
-		if err != nil {
-			// We're just logging this error instead of returning, since the file is already added and pinned
-			log.Printf("Warning: failed to provide CID to IPFS network: %v, output: %s", err, string(ipfsProvideOutput))
-			// Continue execution even if the provide command fails
-		} else {
-			log.Printf("Successfully announced CID %s to the IPFS network", pdfCID)
-		}
-
 		// Add PDF-related files to result
 		result["pdf"] = fileData.PDFPath
 		result["pdf_torrent"] = fileData.PDFTorrPath
 		result["torrent_added"] = torrentAddedPath // Add the new path to the result
-		result["pdf_cid"] = pdfCID
 	}
 
 	// Image Processing (Optional)
