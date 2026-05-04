@@ -80,11 +80,11 @@ func main() {
 	flag.IntVar(&cfg.limiter.burst, "limiter-burst", 16, "Rate limiter maximum burst")
 	flag.BoolVar(&cfg.limiter.enabled, "limiter-enabled", true, "Enable rate limiter")
 
-	flag.StringVar(&cfg.smtp.host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
-	flag.IntVar(&cfg.smtp.port, "smtp-port", 25, "SMTP port")
-	flag.StringVar(&cfg.smtp.username, "smtp-username", "20372de296e321", "SMTP username")
-	flag.StringVar(&cfg.smtp.password, "smtp-password", "121fa461714fa2", "SMTP password")
-	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "Jesarx <jesarx@riseup.net>", "SMTP sender")
+	flag.StringVar(&cfg.smtp.host, "smtp-host", viper.GetString("smtp.host"), "SMTP host")
+	flag.IntVar(&cfg.smtp.port, "smtp-port", viper.GetInt("smtp.port"), "SMTP port")
+	flag.StringVar(&cfg.smtp.username, "smtp-username", viper.GetString("smtp.username"), "SMTP username")
+	flag.StringVar(&cfg.smtp.password, "smtp-password", viper.GetString("smtp.password"), "SMTP password")
+	flag.StringVar(&cfg.smtp.sender, "smtp-sender", viper.GetString("smtp.sender"), "SMTP sender")
 
 	flag.Func("cors-trusted-origins", "Trusted CORS origins (space separated)", func(val string) error {
 		cfg.cors.trustedOrigins = strings.Fields(val)

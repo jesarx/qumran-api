@@ -73,7 +73,7 @@ func (app *application) writeJSON(w http.ResponseWriter, status int, data envelo
 }
 
 func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	maxBytes := 80 * 1_048_576
+	maxBytes := 1 * 1_048_576
 	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -150,6 +150,17 @@ func (app *application) CleanString(str string) string {
 
 	// Replace spaces with underscores
 	return strings.ReplaceAll(result, " ", "_")
+}
+
+// sanitizeMetadataValue strips control characters to prevent argument injection
+// into external tools like exiftool.
+func sanitizeMetadataValue(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdfField string, imageField string, shortTitle string, authorID int64, publisherID int64) (map[string]string, error) {
@@ -253,12 +264,15 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		}
 
 		// Now add specific metadata to the PDF
+		safeTitle := sanitizeMetadataValue(shortTitle)
+		safeAuthor := sanitizeMetadataValue(author.Name + " " + author.LastName)
+		safePublisher := sanitizeMetadataValue(publisher.Name)
 		pdfMetadataCmd := exec.Command("exiftool",
 			"-overwrite_original",
 			"-charset", "exif=UTF8",
-			"-Title="+shortTitle,
-			"-Author="+author.Name+" "+author.LastName,
-			"-Publisher="+publisher.Name,
+			"-Title="+safeTitle,
+			"-Author="+safeAuthor,
+			"-Publisher="+safePublisher,
 			fileData.PDFPath)
 
 		pdfMetadataOutput, err := pdfMetadataCmd.CombinedOutput()
@@ -270,7 +284,7 @@ func (app *application) processFiles(w http.ResponseWriter, r *http.Request, pdf
 		// Build the command with separate tracker arguments
 		args := []string{
 			"-o", fileData.PDFTorrPath,
-			"-c", fmt.Sprintf("%s by %s %s", shortTitle, author.Name, author.LastName),
+			"-c", sanitizeMetadataValue(fmt.Sprintf("%s by %s %s", shortTitle, author.Name, author.LastName)),
 		}
 
 		// Add each tracker individually

@@ -30,6 +30,25 @@ func (app *application) recoverPanic(next http.Handler) http.Handler {
 }
 
 // RATE LIMITER
+func realIP(r *http.Request) string {
+	// Trust X-Real-IP set by a reverse proxy (e.g. nginx proxy_set_header X-Real-IP)
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	// Fall back to the leftmost address in X-Forwarded-For
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		if idx := strings.Index(fwd, ","); idx != -1 {
+			return strings.TrimSpace(fwd[:idx])
+		}
+		return strings.TrimSpace(fwd)
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
 func (app *application) rateLimit(next http.Handler) http.Handler {
 	type client struct {
 		limiter  *rate.Limiter
@@ -60,16 +79,10 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if app.config.limiter.enabled {
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				app.serverErrorResponse(w, r, err)
-				return
-			}
+			ip := realIP(r)
 
 			mu.Lock()
 
-			// r: requests per second permitted
-			// b: simultaneous batch requests permitted
 			if _, found := clients[ip]; !found {
 				clients[ip] = &client{
 					limiter: rate.NewLimiter(rate.Limit(app.config.limiter.rps), app.config.limiter.burst),
@@ -181,7 +194,7 @@ func (app *application) requirePermission(code string, next http.HandlerFunc) ht
 		next.ServeHTTP(w, r)
 	}
 
-	return app.requireAuthenticatedUser(fn)
+	return app.requireActivatedUser(fn)
 }
 
 func (app *application) enableCORS(next http.Handler) http.Handler {
@@ -249,6 +262,15 @@ func (mw *metricsResponseWriter) Unwrap() http.ResponseWriter {
 	return mw.wrapped
 }
 
+func (app *application) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "deny")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (app *application) metrics(next http.Handler) http.Handler {
 	var (
 		totalRequestsReceived           = expvar.NewInt("total_requests_received")
@@ -264,7 +286,7 @@ func (app *application) metrics(next http.Handler) http.Handler {
 
 		mw := newMetricsResponseWriter(w)
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(mw, r)
 
 		totalResponsesSent.Add(1)
 
